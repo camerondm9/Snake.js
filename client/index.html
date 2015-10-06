@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<title>Snake.js</title>
+		<link rel="stylesheet" type="text/css" href="snake.css" />
+		<script src="snake-client.js"></script>
+	</head>
+	<body onload="snake.init()">
+		<div id="divSnake" oncontextmenu="javascript:return false;">
+			<canvas id="cvsSnake" width="512" height="512">
+			</canvas>
+		</div>
+		<p class="err" id="msgError">Please turn on JavaScript.</p>
+		<script>document.getElementById("msgError").innerHTML = "";</script>
+	</body>
+</html>
