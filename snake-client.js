@@ -1,4 +1,5 @@
-var snake = {guideOpacity: 0, guideShow: true, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, grid: [], canvas: null, context: null, socket: null, timer: null};
+var snake = {guideOpacity: 0, guideShow: false, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, grid: [], canvas: null, context: null, socket: null, timer: null};
+snake.websocketUrl = "ws://" + window.location.host + "/snake_socket", "snake_upd";
 
 snake.init = function()
 {
@@ -28,7 +29,7 @@ snake.init = function()
 	//Connect to server...
 	if (WebSocket)
 	{
-		snake.socket = new WebSocket("ws://" + window.location.host + "/snake_socket", "snake_upd");
+		snake.socket = new WebSocket(snake.websocketUrl);
 		snake.socket.onmessage = snake.socketMessage;
 		snake.socket.onclose = snake.socketClose;
 	}
