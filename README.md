@@ -1,2 +1,2 @@
-# Snake.js
+# Snake.js (client)
 Multiplayer snake game
