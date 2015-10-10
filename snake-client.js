@@ -1,4 +1,19 @@
-var snake = {guideOpacity: 0, guideShow: false, overlayOpacity: 1.5, overlay: "Connecting...", connected: false, style: null, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, chunks: [], canvas: null, context: null, rpc: {}, socket: null, timer: null};
+var snake = {guideOpacity: 0,
+			guideShow: false,
+			overlayOpacity: 1.5,
+			overlay: "Connecting...",
+			connected: false,
+			style: null,
+			direction: null,
+			position: {x: 0, y: 0, lx: 0, ly: 0, lt: null},
+			focus: {x: 0, y: 0, changed: true},
+			syncExtra: {x: 20, y: 20, timeout: 100},
+			chunks: [],
+			actors: [],
+			canvas: null,
+			context: null,
+			socket: null,
+			timer: null};
 snake.websocketUrl = "ws://" + window.location.host + "/snake";
 
 snake.init = function()
@@ -20,10 +35,12 @@ snake.init = function()
 	//Connect to server...
 	if (WebSocket)
 	{
-		snake.socket = new WebSocket(snake.websocketUrl, "snake2");
-		snake.socket.onopen = snake.socketOpen;
-		snake.socket.onmessage = snake.socketMessage;
-		snake.socket.onclose = snake.socketClose;
+		snake.socket = {send: function(a) {console.log(a)}};
+		
+		//snake.socket = new WebSocket(snake.websocketUrl, "snake2");
+		//snake.socket.onopen = snake.socketOpen;
+		//snake.socket.onmessage = snake.socketMessage;
+		//snake.socket.onclose = snake.socketClose;
 	}
 	else
 	{
@@ -42,6 +59,7 @@ snake.init = function()
 	snake.canvas.ontouchmove = snake.touchMotion;
 	//Begin animation...
 	window.requestAnimationFrame(snake.animate);
+	snake.timer = window.setInterval(snake.tick, 100);
 }
 
 snake.keydown = function(event)
@@ -93,7 +111,6 @@ snake.touchMotion = function(event)
 	var angle = Math.atan2(256 - localX, 256 - localY);
 	var dir = (Math.floor((-angle * 2 / Math.PI) + 1.5) + 4) % 4;
 	snake.tryDirection(dir);
-	snake.touchState = null;
 	event.preventDefault();
 	snake.guideShow = true;
 }
@@ -116,7 +133,19 @@ snake.tryDirection = function(dir)
 
 snake.tick = function()
 {
-	
+	//Actors...
+	for (var i = 0; i < snake.actors.length; i++)
+	{
+		if (snake.actors[i])
+		{
+			//Movement...
+			
+			//Plot point...
+			
+		}
+	}
+	//Only load chunks that we need...
+	snake.syncChunks();
 }
 
 snake.animate = function(timestamp)
@@ -198,18 +227,27 @@ snake.render = function()
 				(offsetY <= ymax) &&
 				((offsetY + snake.chunkSize) >= ymin))
 			{
-				var localXmax = Math.min(snake.chunkSize, xmax - offsetX);
-				var localYmax = Math.min(snake.chunkSize, ymax - offsetY);
-				for (var x = Math.max(0, xmin - offsetX); x <= localXmax; x++)
+				if (!chunk.grid.length)
 				{
-					if (chunk.grid[x])
+					//Pulsing purple while loading...
+					snake.context.fillStyle = "rgba(80,0,80," + ((Math.sin(Date.now() / 800) / 4) + 0.75) + ")";
+					snake.context.fillRect(Math.round((offsetX * csize) + adjustX), Math.round((offsetY * csize) + adjustY), csize * snake.chunkSize, csize * snake.chunkSize);
+				}
+				else
+				{
+					var localXmax = Math.min(snake.chunkSize, xmax - offsetX);
+					var localYmax = Math.min(snake.chunkSize, ymax - offsetY);
+					for (var x = Math.max(0, xmin - offsetX); x <= localXmax; x++)
 					{
-						for (var y = Math.max(0, ymin - offsetY); y <= localYmax; y++)
+						if (chunk.grid[x])
 						{
-							if (chunk.grid[x][y])
+							for (var y = Math.max(0, ymin - offsetY); y <= localYmax; y++)
 							{
-								snake.context.fillStyle = chunk.grid[x][y];
-								snake.context.fillRect(Math.round(((x + offsetX) * csize) + adjustX), Math.round(((y + offsetY) * csize) + adjustY), csize, csize);
+								if (chunk.grid[x][y])
+								{
+									snake.context.fillStyle = chunk.grid[x][y];
+									snake.context.fillRect(Math.round(((x + offsetX) * csize) + adjustX), Math.round(((y + offsetY) * csize) + adjustY), csize, csize);
+								}
 							}
 						}
 					}
@@ -240,21 +278,72 @@ snake.render = function()
 	}
 }
 
-snake.socketMessage = function(event)
+snake.syncChunks = function()
 {
-	var data = JSON.parse(event.data)
-	//Generic RPC...
-	if (data.hasOwnProperty("r"))
+	//Same as rendering code...
+	var csize = Math.floor(Math.min(snake.canvas.width, snake.canvas.height) / 64);
+	var halfx = snake.canvas.width / (2 * csize);
+	var halfy = snake.canvas.height / (2 * csize);
+	var xmax = Math.ceil(snake.focus.x + halfx);
+	var ymax = Math.ceil(snake.focus.y + halfy);
+	var xmin = Math.floor(snake.focus.x - halfx);
+	var ymin = Math.floor(snake.focus.y - halfy);
+	//Convert to chunk coordinates...
+	xmax = Math.ceil((xmax + snake.syncExtra.x) / snake.chunkSize);
+	ymax = Math.ceil((ymax + snake.syncExtra.y) / snake.chunkSize);
+	xmin = Math.floor((xmin - snake.syncExtra.x) / snake.chunkSize);
+	ymin = Math.floor((ymin - snake.syncExtra.y) / snake.chunkSize);
+	//Check which ones we have...
+	var present = [];
+	for (var i = (xmax - xmin); i >= 0; i--)
 	{
-		if (snake.rpc.hasOwnProperty(data.r))
+		present[i] = [];
+		for (var j = (ymax - ymin); j >= 0; j--)
 		{
-			snake.rpc[data.r].apply(window, data.a);
+			present[i][j] = false;
+		}
+	}
+	for (var i = 0; i < snake.chunks.length; i++)
+	{
+		var chunk = snake.chunks[i];
+		if ((chunk.x >= xmin) &&
+			(chunk.x <= xmax) &&
+			(chunk.y >= ymin) &&
+			(chunk.y <= ymax))
+		{
+			//Don't count chunks that are being unsubscribed... (they exist only temporarily)
+			present[chunk.x - xmin][chunk.y - ymin] = ((chunk.timeout || 0) < snake.syncExtra.timeout);
+			chunk.timeout = 0;
 		}
 		else
 		{
-			console.log("RPC '" + data.r + "' not found!");
+			chunk.timeout += 1;
+			if (chunk.timeout == snake.syncExtra.timeout)
+			{
+				//Unsubscribe...
+				snake.socket.send(JSON.stringify({x: chunk.x, y: chunk.y, s: false}));
+			}
 		}
 	}
+	//Request missing chunks...
+	for (var i = (xmax - xmin); i >= 0; i--)
+	{
+		for (var j = (ymax - ymin); j >= 0; j--)
+		{
+			if (!present[i][j])
+			{
+				//Subscribe...
+				snake.socket.send(JSON.stringify({x: i + xmin, y: j + ymin, s: true}));
+				//Create placeholder, to prevent repeat requests...
+				snake.chunks.push({x: i + xmin, y: j + ymin, grid: []});
+			}
+		}
+	}
+}
+
+snake.socketMessage = function(event)
+{
+	var data = JSON.parse(event.data)
 	//Welcome, provide server information...
 	if (data.hasOwnProperty("w"))
 	{
@@ -264,6 +353,30 @@ snake.socketMessage = function(event)
 		snake.chunkBits = data.b;
 		snake.chunkSize = 1 << snake.chunkBits;
 		snake.chunkMask = snake.chunkSize - 1;
+	}
+	//Actor update...
+	else if (data.hasOwnProperty("a"))
+	{
+		if (data.s)
+		{
+			var actor = snake.actors[data.a];
+			if (!actor)
+			{
+				actor = {};
+				snake.actors[data.a] = actor;
+			}
+			actor.style = data.s;
+			actor.x = data.x;
+			actor.y = data.y;
+			actor.path = data.p;
+		}
+		else
+		{
+			if (snake.actors[data.a])
+			{
+				snake.actors[data.a] = null;
+			}
+		}
 	}
 	//Chunk update...
 	else if (data.hasOwnProperty("x"))
@@ -312,6 +425,10 @@ snake.socketMessage = function(event)
 			if (!chunk)
 			{
 				chunk = {x: data.x, y: data.y, grid: []};
+				snake.chunks.push(chunk);
+			}
+			if (!chunk.grid.length)
+			{
 				for (var i = 0; i < snake.chunkSize; i++)
 				{
 					chunk.grid[i] = [];
@@ -320,7 +437,6 @@ snake.socketMessage = function(event)
 						chunk.grid[i][j] = null;
 					}
 				}
-				snake.chunks.push(chunk);
 			}
 			var styles = data.s;
 			var values = data.u;
