@@ -1,5 +1,5 @@
-var snake = {guideOpacity: 0, guideShow: false, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, grid: [], canvas: null, context: null, socket: null, timer: null};
-snake.websocketUrl = "ws://" + window.location.host + "/snake_socket", "snake_upd";
+var snake = {guideOpacity: 0, guideShow: false, overlayOpacity: 1.5, overlay: "Connecting...", style: null, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, chunks: [], canvas: null, context: null, rpc: {}, socket: null, timer: null};
+snake.websocketUrl = "ws://" + window.location.host + "/snake";
 
 snake.init = function()
 {
@@ -10,12 +10,26 @@ snake.init = function()
 		snake.context = snake.canvas.getContext("2d");
 		snake.context.fillStyle = "rgb(0,0,0)";
 		snake.context.fillRect(0, 0, snake.canvas.width, snake.canvas.height);
+		snake.context.font = "30px sans-serif";
 	}
 	else
 	{
 		document.getElementById("msgError").innerHTML = "Your browser must support HTML5 canvas!";
 		return;
 	}
+	//Connect to server...
+	if (WebSocket)
+	{
+		snake.socket = new WebSocket(snake.websocketUrl, "snake2");
+		snake.socket.onmessage = snake.socketMessage;
+		snake.socket.onclose = snake.socketClose;
+	}
+	else
+	{
+		document.getElementById("msgError").innerHTML = "Your browser must support HTML5 websocket!";
+		return;
+	}
+	//Attach events...
 	document.onkeydown = snake.keydown;
 	snake.canvas.onmousedown = snake.mouseMotion;
 	snake.canvas.onmousemove = snake.mouseMotion;
@@ -25,34 +39,8 @@ snake.init = function()
 	snake.canvas.ontouchcancel = snake.touchDefault;
 	snake.canvas.ontouchleave = snake.touchDefault;
 	snake.canvas.ontouchmove = snake.touchMotion;
-	snake.clearGrid(64);
-	//Connect to server...
-	if (WebSocket)
-	{
-		snake.socket = new WebSocket(snake.websocketUrl);
-		snake.socket.onmessage = snake.socketMessage;
-		snake.socket.onclose = snake.socketClose;
-	}
-	else
-	{
-		document.getElementById("msgError").innerHTML = "Your browser must support HTML5 websocket!";
-		return;
-	}
-	window.requestAnimationFrame(snake.tick);
-}
-snake.clearGrid = function(s)
-{
-	snake.grid = [];
-	for (var x = 0; x < s; x++)
-	{
-		snake.grid[x] = [];
-		for (var y = 0; y < s; y++)
-		{
-			snake.grid[x][y] = "";
-		}
-	}
-	snake.position.x = Math.round(s / 2);
-	snake.position.y = Math.round(s / 2);
+	//Begin animation...
+	window.requestAnimationFrame(snake.animate);
 }
 
 snake.keydown = function(event)
@@ -83,6 +71,7 @@ snake.keydown = function(event)
 			break;
 	}
 }
+
 snake.mouseMotion = function(event)
 {
 	if (event.button || event.which)
@@ -94,6 +83,7 @@ snake.mouseMotion = function(event)
 		event.preventDefault();
 	}
 }
+
 snake.touchMotion = function(event)
 {
 	var rect = event.target.getBoundingClientRect();
@@ -106,10 +96,12 @@ snake.touchMotion = function(event)
 	event.preventDefault();
 	snake.guideShow = true;
 }
+
 snake.touchDefault = function(event)
 {
 	event.preventDefault();
 }
+
 snake.tryDirection = function(dir)
 {
 	if (snake.direction != dir)
@@ -120,9 +112,15 @@ snake.tryDirection = function(dir)
 		}
 	}
 }
-snake.tick = function(timestamp)
+
+snake.tick = function()
 {
-	window.requestAnimationFrame(snake.tick);
+	
+}
+
+snake.animate = function(timestamp)
+{
+	window.requestAnimationFrame(snake.animate);
 	//Track focus position...
 	if (snake.focus.changed || !snake.position.lt)
 	{
@@ -151,13 +149,11 @@ snake.tick = function(timestamp)
 		snake.position.y = snake.position.ly + (dy * rt);
 	}
 	//Make canvas fill window...
-	if (snake.canvas.width != window.innerWidth)
+	if ((snake.canvas.width != window.innerWidth) || (snake.canvas.height != window.innerHeight))
 	{
 		snake.canvas.width = window.innerWidth;
-	}
-	if (snake.canvas.height != window.innerHeight)
-	{
 		snake.canvas.height = window.innerHeight;
+		snake.context.font = "30px sans-serif";
 	}
 	//Fade guide...
 	if (snake.guideShow)
@@ -168,31 +164,54 @@ snake.tick = function(timestamp)
 	{
 		snake.guideOpacity = Math.max(snake.guideOpacity - 0.002, 0);
 	}
+	snake.overlayOpacity = Math.max(snake.overlayOpacity - 0.005, 0);
 	//Refresh screen...
 	snake.render();
 }
+
 snake.render = function()
 {
 	//Clear background...
 	snake.context.fillStyle = "rgb(0,0,0)";
 	snake.context.fillRect(0, 0, snake.canvas.width, snake.canvas.height);
-	//Fill cells...
-	var csize = snake.canvas.width / 64;
-	for (var x = 0; x <= 64; x++)
+	if (snake.chunks.length)
 	{
 		//Track focus position smoothly...
-		var realX = Math.floor(snake.position.x) + x - 32;
-		var adjustX = snake.position.x - Math.floor(snake.position.x);
-		if (snake.grid[realX])
+		var csize = Math.floor(Math.min(snake.canvas.width, snake.canvas.height) / 64);
+		var halfx = snake.canvas.width / (2 * csize);
+		var halfy = snake.canvas.height / (2 * csize);
+		var xmax = Math.ceil(snake.focus.x + halfx);
+		var ymax = Math.ceil(snake.focus.y + halfy);
+		var xmin = Math.floor(snake.focus.x - halfx);
+		var ymin = Math.floor(snake.focus.y - halfy);
+		var adjustX = snake.canvas.width / 2 - snake.focus.x;
+		var adjustY = snake.canvas.height / 2 - snake.focus.y;
+		//Fill cells...
+		for (var i = 0; i < snake.chunks.length; i++)
 		{
-			for (var y = 0; y <= 64; y++)
+			var chunk = snake.chunks[i];
+			var offsetX = (chunk.x * snake.chunkSize);
+			var offsetY = (chunk.y * snake.chunkSize);
+			if ((offsetX <= xmax) &&
+				((offsetX + snake.chunkSize) >= xmin) && 
+				(offsetY <= ymax) &&
+				((offsetY + snake.chunkSize) >= ymin))
 			{
-				var realY = Math.floor(snake.position.y) + y - 32;
-				var adjustY = snake.position.y - Math.floor(snake.position.y);
-				if (snake.grid[realX][realY])
+				var localXmax = Math.min(snake.chunkSize, xmax - offsetX);
+				var localYmax = Math.min(snake.chunkSize, ymax - offsetY);
+				for (var x = Math.max(0, xmin - offsetX); x <= localXmax; x++)
 				{
-					snake.context.fillStyle = snake.grid[realX][realY];
-					snake.context.fillRect(Math.round((x - adjustX) * csize), Math.round((y - adjustY) * csize), csize, csize);
+					if (chunk.grid[x])
+					{
+						for (var y = Math.max(0, ymin - offsetY); y <= localYmax; y++)
+						{
+							if (chunk.grid[x][y])
+							{
+								snake.context.fillStyle = chunk.grid[x][y];
+								snake.context.fillRect(Math.round(((x + offsetX) * csize) + adjustX), Math.round(((y + offsetY) * csize) + adjustY), csize, csize);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -200,7 +219,7 @@ snake.render = function()
 	//Show mouse/touch guidelines...
 	if (snake.guideOpacity > 0)
 	{
-		snake.context.strokeStyle = "rgba(255, 255, 255, " + snake.guideOpacity + ")";
+		snake.context.strokeStyle = "rgba(255,255,255," + snake.guideOpacity + ")";
 		snake.context.beginPath();
 		var sizeMin = Math.min(snake.canvas.width, snake.canvas.height);
 		var x = (snake.canvas.width - sizeMin) / 2;
@@ -211,35 +230,133 @@ snake.render = function()
 		snake.context.lineTo(x, y + sizeMin);
 		snake.context.stroke();
 	}
+	//Show overlay text...
+	if ((snake.overlayOpacity > 0) && snake.overlay)
+	{
+		snake.context.fillStyle = "rgba(255,255,255," + snake.overlayOpacity + ")";
+		var size = snake.context.measureText(snake.overlay);
+		snake.context.fillText(snake.overlay, (snake.canvas.width - size.width) / 2, (snake.canvas.height - 30) / 2);
+	}
 }
 
 snake.socketMessage = function(event)
 {
 	var data = JSON.parse(event.data)
-	if (data.hasOwnProperty("s"))
+	//Generic RPC...
+	if (data.hasOwnProperty("r"))
 	{
-		//Grid size...
-		snake.clearGrid(data["s"]);
+		if (snake.rpc.hasOwnProperty(data.r))
+		{
+			snake.rpc[data.r].apply(window, data.a);
+		}
+		else
+		{
+			console.log("RPC '" + data.r + "' not found!");
+		}
 	}
-	else if (data.hasOwnProperty("c"))
+	//Welcome, provide server information...
+	if (data.hasOwnProperty("w"))
 	{
-		//Grid update...
-		snake.grid[data["x"]][data["y"]] = data["c"];
+		snake.overlay = data.w;
+		snake.overlayOpacity = 1.5;	//Greater than 1: no visual effect, takes longer to fade away...
+		snake.chunks = [];
+		snake.chunkBits = data.b;
+		snake.chunkSize = 1 << snake.chunkBits;
+		snake.chunkMask = snake.chunkSize - 1;
 	}
-	else if (data.hasOwnProperty("d"))
+	//Chunk update...
+	else if (data.hasOwnProperty("x"))
 	{
-		//Movement update...
-		snake.direction = data["d"];
-		snake.focus.x = Math.min(Math.max(data["x"], 32), snake.grid.length - 32);
-		snake.focus.y = Math.min(Math.max(data["y"], 32), snake.grid.length - 32);
-		snake.focus.changed = true;
+		if (data.hasOwnProperty("g"))
+		{
+			//Find chunk...
+			var chunk = null;
+			for (var i = 0; i < snake.chunks.length; i++)
+			{
+				if ((snake.chunks[i].x == data.x) && (snake.chunks[i].y == data.y))
+				{
+					chunk = snake.chunks[i];
+					break;
+				}
+			}
+			//Create/replace chunk...
+			if (!chunk)
+			{
+				chunk = {x: data.x, y: data.y, grid: []};
+				snake.chunks.push(chunk);
+			}
+			var styles = data.s;
+			for (var i = 0; i < snake.chunkSize; i++)
+			{
+				chunk.grid[i] = [];
+				for (var j = 0; j < snake.chunkSize; j++)
+				{
+					chunk.grid[i][j] = styles[data.g[i][j]];
+				}
+			}
+		}
+		else if (data.hasOwnProperty("u"))
+		{
+			//Find chunk...
+			var chunk = null;
+			for (var i = 0; i < snake.chunks.length; i++)
+			{
+				if ((snake.chunks[i].x == data.x) && (snake.chunks[i].y == data.y))
+				{
+					chunk = snake.chunks[i];
+					break;
+				}
+			}
+			//Update chunk...
+			if (!chunk)
+			{
+				chunk = {x: data.x, y: data.y, grid: []};
+				for (var i = 0; i < snake.chunkSize; i++)
+				{
+					chunk.grid[i] = [];
+					for (var j = 0; j < snake.chunkSize; j++)
+					{
+						chunk.grid[i][j] = null;
+					}
+				}
+				snake.chunks.push(chunk);
+			}
+			var styles = data.s;
+			var values = data.u;
+			for (var i = 0; i < values.length; i++)
+			{
+				var x = values[i] & snake.chunkMask;
+				var y = values[i] & (snake.chunkMask << snake.chunkBits);
+				var s = values[i] & (-1 << (2 * snake.chunkBits));
+				chunk.grid[x][y] = styles[s];
+			}
+		}
+		else
+		{
+			//Delete chunk...
+			var chunk = null;
+			for (var i = 0; i < snake.chunks.length; i++)
+			{
+				if ((snake.chunks[i].x == data.x) && (snake.chunks[i].y == data.y))
+				{
+					snake.chunks.splice(i, 1);
+					break;
+				}
+			}
+		}
+	}
+	//Assign style...
+	else if (data.hasOwnProperty("s"))
+	{
+		snake.style = data.s;
 	}
 	else
 	{
 		//Unknown message type...
 	}
 }
+
 snake.socketClose = function(event)
 {
-	snake.clearGrid(64);
+	snake.chunks = [];
 }
