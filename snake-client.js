@@ -1,4 +1,4 @@
-var snake = {guideOpacity: 0, guideShow: false, overlayOpacity: 1.5, overlay: "Connecting...", style: null, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, chunks: [], canvas: null, context: null, rpc: {}, socket: null, timer: null};
+var snake = {guideOpacity: 0, guideShow: false, overlayOpacity: 1.5, overlay: "Connecting...", connected: false, style: null, direction: null, position: {x: 0, y: 0, lx: 0, ly: 0, lt: null}, focus: {x: 0, y: 0, changed: true}, chunks: [], canvas: null, context: null, rpc: {}, socket: null, timer: null};
 snake.websocketUrl = "ws://" + window.location.host + "/snake";
 
 snake.init = function()
@@ -21,6 +21,7 @@ snake.init = function()
 	if (WebSocket)
 	{
 		snake.socket = new WebSocket(snake.websocketUrl, "snake2");
+		snake.socket.onopen = snake.socketOpen;
 		snake.socket.onmessage = snake.socketMessage;
 		snake.socket.onclose = snake.socketClose;
 	}
@@ -356,7 +357,15 @@ snake.socketMessage = function(event)
 	}
 }
 
+snake.socketOpen = function(event)
+{
+	snake.connected = true;
+}
+
 snake.socketClose = function(event)
 {
 	snake.chunks = [];
+	snake.overlay = snake.connected ? "Connection lost!" : "Failed to connect!";
+	snake.overlayOpacity = 1.5;
+	snake.connected = false;
 }
