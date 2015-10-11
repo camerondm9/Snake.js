@@ -1,4 +1,6 @@
-var snake = {guideOpacity: 0,
+var config = {websocketUrl: "ws://localhost:8080/snake"};
+var snake = {lastFrame: 0,
+			guideOpacity: 0,
 			guideShow: false,
 			overlayOpacity: 1.5,
 			overlay: "Connecting...",
@@ -6,8 +8,11 @@ var snake = {guideOpacity: 0,
 			style: null,
 			direction: null,
 			self: null,
-			focus: {x: 0, y: 0},
-			syncExtra: {x: 20, y: 20, timeout: 5000, ticks: 5},
+			autoPath: 3,
+			maxPath: 50,
+			lastTouch: {x: 0, y: 0, direction: null, threshold: 0},
+			focus: {x: 0, y: 0, vx: 0, vy: 0},
+			syncExtra: {x: 3, y: 3, timeout: 5000, ticks: 50},
 			chunks: [],
 			actors: [],
 			canvas: null,
@@ -15,7 +20,6 @@ var snake = {guideOpacity: 0,
 			socket: null,
 			speed: 100,
 			timer: null};
-snake.websocketUrl = "ws://" + window.location.host + "/snake";
 
 snake.init = function()
 {
@@ -36,12 +40,10 @@ snake.init = function()
 	//Connect to server...
 	if (WebSocket)
 	{
-		snake.socket = {send: function(a) {console.log(a)}};
-		
-		//snake.socket = new WebSocket(snake.websocketUrl, "snake2");
-		//snake.socket.onopen = snake.socketOpen;
-		//snake.socket.onmessage = snake.socketMessage;
-		//snake.socket.onclose = snake.socketClose;
+		snake.socket = new WebSocket(config.websocketUrl, "snake2");
+		snake.socket.onopen = snake.socketOpen;
+		snake.socket.onmessage = snake.socketMessage;
+		snake.socket.onclose = snake.socketClose;
 	}
 	else
 	{
@@ -52,12 +54,12 @@ snake.init = function()
 	document.onkeydown = snake.keydown;
 	snake.canvas.onmousedown = snake.mouseMotion;
 	snake.canvas.onmousemove = snake.mouseMotion;
-	snake.canvas.onmouseup = snake.preventDefault;
+	snake.canvas.onmouseup = snake.mouseReset;
 	snake.canvas.ontouchstart = snake.touchMotion;
 	snake.canvas.ontouchmove = snake.touchMotion;
-	snake.canvas.ontouchend = snake.preventDefault;
-	snake.canvas.ontouchcancel = snake.preventDefault;
-	snake.canvas.ontouchleave = snake.preventDefault;
+	snake.canvas.ontouchend = snake.touchReset;
+	snake.canvas.ontouchcancel = snake.touchReset;
+	snake.canvas.ontouchleave = snake.touchReset;
 	//Begin animation...
 	window.requestAnimationFrame(snake.animate);
 }
@@ -103,32 +105,54 @@ snake.mouseMotion = function(event)
 	}
 }
 
+snake.mouseReset = function(event)
+{
+	if (event.button || event.which)
+	{
+		snake.touchReset(event);
+	}
+	else
+	{
+		event.preventDefault();
+	}
+}
+
 snake.touchMotion = function(event)
 {
-	var rect = event.target.getBoundingClientRect();
-	var localX = (event.clientX || event.pageX || event.changedTouches[0].pageX) - rect.left;
-	var localY = (event.clientY || event.pageY || event.changedTouches[0].pageY) - rect.top;
-	var angle = Math.atan2(256 - localX, 256 - localY);
-	var dir = (Math.floor((-angle * 2 / Math.PI) + 1.5) + 4) % 4;
-	snake.tryDirection(dir);
 	event.preventDefault();
 	snake.guideShow = true;
-}
-
-snake.preventDefault = function(event)
-{
-	event.preventDefault();
-}
-
-snake.tryDirection = function(dir)
-{
-	if (snake.direction != dir)
+	var rect = event.target.getBoundingClientRect();
+	var centeredX = (snake.canvas.width / 2) + rect.left - (event.clientX || event.pageX || event.changedTouches[0].pageX);
+	var centeredY = (snake.canvas.height / 2) + rect.top - (event.clientY || event.pageY || event.changedTouches[0].pageY);
+	//var centerDistance = Math.sqrt((centeredX * centeredX) + (centeredY * centeredY));
+	var angle = Math.atan2(centeredX, centeredY);
+	var dir = (Math.floor((-angle * 2 / Math.PI) + 1.5) + 4) % 4;
+	if (snake.lastTouch.direction == dir)
 	{
-		if (snake.direction != (dir + 2) % 4)
+		var dx = snake.lastTouch.x - centeredX;
+		var dy = snake.lastTouch.y - centeredY;
+		snake.lastTouch.x = centeredX;
+		snake.lastTouch.y = centeredY;
+		snake.lastTouch.threshold -= Math.sqrt((dx * dx) + (dy * dy));
+		if (snake.lastTouch.threshold > 0)
 		{
-			snake.socket.send(JSON.stringify({"dir": dir}));
+			return;
 		}
 	}
+	else
+	{
+		snake.lastTouch.x = centeredX;
+		snake.lastTouch.y = centeredY;
+		snake.lastTouch.direction = dir;
+	}
+	snake.lastTouch.threshold = Math.min(snake.canvas.width, snake.canvas.height) / 4;
+	snake.tryDirection(dir);
+}
+
+snake.touchReset = function(event)
+{
+	snake.lastTouch.direction = null;
+	event.preventDefault();
 }
 
 snake.animate = function(timestamp)
@@ -140,6 +164,33 @@ snake.animate = function(timestamp)
 		snake.canvas.width = window.innerWidth;
 		snake.canvas.height = window.innerHeight;
 		snake.context.font = "30px sans-serif";
+	}
+	//Follow snake smoothly...
+	if (snake.self && snake.self.lastTime)
+	{
+		var elapsed = (timestamp - snake.lastFrame);
+		var remaining = (timestamp - snake.self.lastTime);
+		var rx = snake.focus.x - snake.self.x;
+		var ry = snake.focus.y - snake.self.y;
+		switch (snake.direction)
+		{
+		case 0:
+			rx -= 1 - (remaining / snake.speed);
+			break;
+		case 1:
+			ry -= 1 - (remaining / snake.speed);
+			break;
+		case 2:
+			rx += 1 - (remaining / snake.speed);
+			break;
+		case 3:
+			ry += 1 - (remaining / snake.speed);
+			break;
+		}
+		snake.focus.vx = (snake.focus.vx * 3 - rx * 1000 / snake.speed) / 4;
+		snake.focus.vy = (snake.focus.vy * 3 - ry * 1000 / snake.speed) / 4;
+		snake.focus.x += snake.focus.vx * elapsed / 1000;
+		snake.focus.y += snake.focus.vy * elapsed / 1000;
 	}
 	//Fade guide...
 	if (snake.guideShow)
@@ -153,6 +204,7 @@ snake.animate = function(timestamp)
 	snake.overlayOpacity = Math.max(snake.overlayOpacity - 0.005, 0);
 	//Refresh screen...
 	snake.render();
+	snake.lastFrame = timestamp;
 }
 
 snake.render = function()
@@ -170,8 +222,8 @@ snake.render = function()
 		var ymax = Math.ceil(snake.focus.y + halfy);
 		var xmin = Math.floor(snake.focus.x - halfx);
 		var ymin = Math.floor(snake.focus.y - halfy);
-		var adjustX = snake.canvas.width / 2 - snake.focus.x;
-		var adjustY = snake.canvas.height / 2 - snake.focus.y;
+		var adjustX = snake.canvas.width / 2 - ((snake.focus.x + 0.5) * csize);
+		var adjustY = snake.canvas.height / 2 - ((snake.focus.y + 0.5) * csize);
 		//Fill cells...
 		for (var i = 0; i < snake.chunks.length; i++)
 		{
@@ -211,6 +263,33 @@ snake.render = function()
 			}
 		}
 	}
+	//Show path...
+	if (snake.self)
+	{
+		snake.context.fillStyle = snake.style;
+		var project = {x: snake.self.x, y: snake.self.y};
+		for (var i = 0; i < snake.self.path.length; i++)
+		{
+			switch (snake.self.path[i])
+			{
+			case 0:
+				project.x -= 1;
+				break;
+			case 1:
+				project.y -= 1;
+				break;
+			case 2:
+				project.x += 1;
+				break;
+			case 3:
+				project.y += 1;
+				break;
+			}
+			snake.context.beginPath();
+			snake.context.arc(Math.round(((project.x + 0.5) * csize) + adjustX), Math.round(((project.y + 0.5) * csize) + adjustY), (i == 0 || i == (snake.self.path.length - 1)) ? 3 : 2, 0, 2 * Math.PI, false);
+			snake.context.fill();
+		}
+	}
 	//Show mouse/touch guidelines...
 	if (snake.guideOpacity > 0)
 	{
@@ -242,9 +321,9 @@ snake.plot = function(x, y, style)
 		var offsetX = (chunk.x * snake.chunkSize);
 		var offsetY = (chunk.y * snake.chunkSize);
 		if ((offsetX <= x) &&
-			((offsetX + snake.chunkSize) >= x) && 
+			((offsetX + snake.chunkSize) > x) && 
 			(offsetY <= y) &&
-			((offsetY + snake.chunkSize) >= y))
+			((offsetY + snake.chunkSize) > y))
 		{
 			if (chunk.grid.length)
 			{
@@ -256,8 +335,58 @@ snake.plot = function(x, y, style)
 	return false;
 }
 
+snake.tryDirection = function(dir)
+{
+	if (!snake.self.path.length)
+	{
+		snake.self.path.push(dir);
+	}
+	else
+	{
+		if (dir == (snake.self.path[snake.self.path.length - 1] + 2) % 4)
+		{
+			if (snake.self.path.length > 1)
+			{
+				snake.self.path.pop();
+			}
+		}
+		else if (snake.self.path.length < snake.maxPath)
+		{
+			snake.self.path.push(dir);
+		}
+	}
+}
+
 snake.tick = function()
 {
+	//Self...
+	snake.direction = snake.self.path.shift();
+	if (!snake.self.path.length && (snake.direction >= 0))
+	{
+		snake.self.path.push(snake.direction);
+	}
+	else if ((snake.self.path.length < snake.autoPath) && (snake.self.path.length > 0))
+	{
+		snake.self.path.push(snake.self.path[snake.self.path.length - 1]);
+	}
+	//Movement...
+	switch (snake.direction)
+	{
+	case 0:
+		snake.self.x -= 1;
+		break;
+	case 1:
+		snake.self.y -= 1;
+		break;
+	case 2:
+		snake.self.x += 1;
+		break;
+	case 3:
+		snake.self.y += 1;
+		break;
+	}
+	snake.plot(snake.self.x, snake.self.y, snake.style);
+	snake.self.lastTime = performance.now();
 	//Actors...
 	for (var i = 0; i < snake.actors.length; i++)
 	{
@@ -381,22 +510,37 @@ snake.socketMessage = function(event)
 	//Actor update...
 	else if (data.hasOwnProperty("a"))
 	{
-		if (data.s)
+		if (data.a < 0)
 		{
-			var actor = snake.actors[data.a];
-			if (!actor)
-			{
-				actor = {};
-				snake.actors[data.a] = actor;
-			}
-			actor.style = data.s;
-			actor.x = data.x;
-			actor.y = data.y;
-			actor.path = data.p;
+			//Self update...
+			snake.self = {x: data.x, y: data.y, path: []};
+			snake.style = data.s;
+			snake.focus.x = data.x;
+			snake.focus.y = data.y;
+			snake.direction = null;
 		}
 		else
 		{
-			snake.actors[data.a] = null;
+			if (data.x)
+			{
+				var actor = snake.actors[data.a];
+				if (!actor)
+				{
+					actor = {};
+					snake.actors[data.a] = actor;
+				}
+				if (data.s)
+				{
+					actor.style = data.s;
+				}
+				actor.x = data.x;
+				actor.y = data.y;
+				actor.path = data.p;
+			}
+			else
+			{
+				snake.actors[data.a] = null;
+			}
 		}
 	}
 	//Chunk update...
@@ -482,11 +626,6 @@ snake.socketMessage = function(event)
 				}
 			}
 		}
-	}
-	//Assign style...
-	else if (data.hasOwnProperty("s"))
-	{
-		snake.style = data.s;
 	}
 	else
 	{
