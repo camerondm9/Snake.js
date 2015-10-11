@@ -1,4 +1,4 @@
-var config = {websocketUrl: "ws://snake-camerondm9.rhcloud.com:8080/"};
+var config = {websocketUrl: "ws://snake-camerondm9.rhcloud.com/"};
 var snake = {lastFrame: 0,
 			guideOpacity: 0,
 			guideShow: false,
