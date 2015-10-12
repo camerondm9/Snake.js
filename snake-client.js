@@ -499,7 +499,7 @@ snake.socketMessage = function(event)
 		snake.chunkSize = 1 << snake.chunkBits;
 		snake.chunkMask = snake.chunkSize - 1;
 		snake.speed = data.i;
-		snake.syncExtra.ticks = snake.syncExtra.timeout / snake.speed;
+		snake.syncExtra.ticks = Math.ceil(snake.syncExtra.timeout / snake.speed);
 		//Restart timer...
 		if (snake.timer)
 		{
