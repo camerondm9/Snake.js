@@ -8,7 +8,7 @@ var snake = {lastFrame: 0,
 			style: null,
 			direction: null,
 			self: null,
-			autoPath: 3,
+			autoPath: 1,
 			maxPath: 50,
 			lastTouch: {x: 0, y: 0, direction: null, threshold: 0},
 			focus: {x: 0, y: 0, vx: 0, vy: 0},
@@ -456,8 +456,8 @@ snake.syncChunks = function()
 			(chunk.y >= ymin) &&
 			(chunk.y <= ymax))
 		{
-			//Don't count chunks that are being unsubscribed... (they exist only temporarily)
-			present[chunk.x - xmin][chunk.y - ymin] = ((chunk.timeout || 0) < snake.syncExtra.ticks);
+			//Count all chunks, even those being unsubscribed... (otherwise we create duplicate placeholders)
+			present[chunk.x - xmin][chunk.y - ymin] = true;
 			chunk.timeout = 0;
 		}
 		else
@@ -616,7 +616,6 @@ snake.socketMessage = function(event)
 		else
 		{
 			//Delete chunk...
-			var chunk = null;
 			for (var i = 0; i < snake.chunks.length; i++)
 			{
 				if ((snake.chunks[i].x == data.x) && (snake.chunks[i].y == data.y))
