@@ -340,6 +340,7 @@ snake.tryDirection = function(dir)
 	if (!snake.self.path.length)
 	{
 		snake.self.path.push(dir);
+		snake.sendPath();
 	}
 	else
 	{
@@ -348,13 +349,20 @@ snake.tryDirection = function(dir)
 			if (snake.self.path.length > 1)
 			{
 				snake.self.path.pop();
+				snake.sendPath();
 			}
 		}
 		else if (snake.self.path.length < snake.maxPath)
 		{
 			snake.self.path.push(dir);
+			snake.sendPath();
 		}
 	}
+}
+
+snake.sendPath = function()
+{
+	snake.socket.send(JSON.stringify({x: snake.self.x, y: snake.self.y, p: snake.self.path}));
 }
 
 snake.tick = function()
@@ -364,10 +372,12 @@ snake.tick = function()
 	if (!snake.self.path.length && (snake.direction >= 0))
 	{
 		snake.self.path.push(snake.direction);
+		snake.sendPath();
 	}
 	else if ((snake.self.path.length < snake.autoPath) && (snake.self.path.length > 0))
 	{
 		snake.self.path.push(snake.self.path[snake.self.path.length - 1]);
+		snake.sendPath();
 	}
 	//Movement...
 	switch (snake.direction)
@@ -396,6 +406,9 @@ snake.tick = function()
 			//Movement...
 			switch (actor.path.shift())
 			{
+			case -1:
+				//Don't move...
+				continue;
 			case 0:
 				actor.x -= 1;
 				break;
@@ -526,13 +539,14 @@ snake.socketMessage = function(event)
 				var actor = snake.actors[data.a];
 				if (!actor)
 				{
-					actor = {};
+					actor = {tail: []};
 					snake.actors[data.a] = actor;
 				}
 				if (data.s)
 				{
 					actor.style = data.s;
 				}
+				//.....// If this actor already existed, find a common point between the old information and the new, and merge the new information in seamlessly.....
 				actor.x = data.x;
 				actor.y = data.y;
 				actor.path = data.p;
