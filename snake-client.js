@@ -553,11 +553,21 @@ snake.socketMessage = function(event)
 		if (data.a < 0)
 		{
 			//Self update...
-			snake.self = {x: data.x, y: data.y, path: []};
-			snake.style = data.s;
-			snake.focus.x = data.x;
-			snake.focus.y = data.y;
-			snake.direction = null;
+			if (!snake.self)
+			{
+				snake.self = {x: data.x, y: data.y, path: []};
+				snake.focus.x = data.x;
+				snake.focus.y = data.y;
+				snake.direction = null;
+			}
+			else
+			{
+				
+			}
+			if (data.s)
+			{
+				snake.style = data.s;
+			}
 		}
 		else
 		{
