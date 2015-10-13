@@ -197,7 +197,7 @@ snake.animate = function(timestamp)
 	//Fade guide...
 	if (snake.guideShow)
 	{
-		snake.guideOpacity = Math.min(snake.guideOpacity + 0.002, 0.1);
+		snake.guideOpacity = Math.min(snake.guideOpacity + 0.002, 0.15);
 	}
 	else
 	{
@@ -289,6 +289,13 @@ snake.render = function()
 			}
 			snake.context.beginPath();
 			snake.context.arc(Math.round(((project.x + 0.5) * csize) + adjustX), Math.round(((project.y + 0.5) * csize) + adjustY), (i == 0 || i == (snake.self.path.length - 1)) ? 3 : 2, 0, 2 * Math.PI, false);
+			snake.context.fill();
+		}
+		//Show spawning dot...
+		if (snake.self.path.length == 0)
+		{
+			snake.context.beginPath();
+			snake.context.arc(Math.round(((snake.self.x + 0.5) * csize) + adjustX), Math.round(((snake.self.y + 0.5) * csize) + adjustY), 3, 0, 2 * Math.PI, false);
 			snake.context.fill();
 		}
 	}
