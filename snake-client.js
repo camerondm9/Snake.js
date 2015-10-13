@@ -145,8 +145,10 @@ snake.touchMotion = function(event)
 		snake.lastTouch.y = centeredY;
 		snake.lastTouch.direction = dir;
 	}
-	snake.lastTouch.threshold = Math.min(snake.canvas.width, snake.canvas.height) / 4;
-	snake.tryDirection(dir);
+	if (snake.tryDirection(dir))
+	{
+		snake.lastTouch.threshold = Math.min(snake.canvas.width, snake.canvas.height) / 4;
+	}
 }
 
 snake.touchReset = function(event)
@@ -341,6 +343,7 @@ snake.tryDirection = function(dir)
 	{
 		snake.self.path.push(dir);
 		snake.sendPath();
+		return true;
 	}
 	else
 	{
@@ -350,19 +353,31 @@ snake.tryDirection = function(dir)
 			{
 				snake.self.path.pop();
 				snake.sendPath();
+				return true;
 			}
 		}
 		else if (snake.self.path.length < snake.maxPath)
 		{
 			snake.self.path.push(dir);
 			snake.sendPath();
+			return true;
 		}
 	}
+	return false;
 }
 
-snake.sendPath = function()
+snake.sendPath = function(force)
 {
-	snake.socket.send(JSON.stringify({x: snake.self.x, y: snake.self.y, p: snake.self.path}));
+	//Reduce the quantity of updates when the path is long...
+	if (!force && (snake.self.path.length > 5))
+	{
+		snake.self.pathWaiting = true;
+	}
+	else
+	{
+		snake.socket.send(JSON.stringify({x: snake.self.x, y: snake.self.y, p: snake.self.path}));
+		snake.self.pathWaiting = false;
+	}
 }
 
 snake.tick = function()
@@ -431,6 +446,11 @@ snake.tick = function()
 				snake.actors[i] = null;
 			}
 		}
+	}
+	//Send path, if needed...
+	if (snake.self.pathWaiting)
+	{
+		snake.sendPath(true);
 	}
 	//Only load chunks that we need...
 	snake.syncChunks();
