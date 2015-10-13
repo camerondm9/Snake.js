@@ -622,8 +622,8 @@ snake.socketMessage = function(event)
 			for (var i = 0; i < values.length; i++)
 			{
 				var x = values[i] & snake.chunkMask;
-				var y = values[i] & (snake.chunkMask << snake.chunkBits);
-				var s = values[i] & (-1 << (2 * snake.chunkBits));
+				var y = (values[i] >> snake.chunkBits) & snake.chunkMask;
+				var s = values[i] >> (2 * snake.chunkBits);
 				chunk.grid[x][y] = styles[s];
 			}
 		}
