@@ -88,6 +88,9 @@ snake.keydown = function(event)
 			event.preventDefault();
 			snake.guideShow = false;
 			break;
+		case 32:	//Spacebar
+			snake.socket.send(JSON.stringify({l: 3}));
+			break;
 		default:
 			break;
 	}
