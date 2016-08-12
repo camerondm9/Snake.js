@@ -40,7 +40,7 @@ snake.init = function()
 	//Connect to server...
 	if (WebSocket)
 	{
-		snake.socket = new WebSocket(window.location.protocol.toLowerCase() === "https:" ? config.websocketUrlSecure : config.websocketUrl), "snake2");
+		snake.socket = new WebSocket(window.location.protocol.toLowerCase() === "https:" ? config.websocketUrlSecure : config.websocketUrl, "snake2");
 		snake.socket.onopen = snake.socketOpen;
 		snake.socket.onmessage = snake.socketMessage;
 		snake.socket.onclose = snake.socketClose;
